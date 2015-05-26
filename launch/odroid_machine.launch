@@ -1,0 +1,6 @@
+<launch>
+  <arg name="mname" default="odroid0" />
+
+  <machine name="$(arg mname)" address="$(arg mname).local" user="odroid" timeout="5.0" env-loader="$(find odroid_machine)/src/launch/ros_env_loader.bash" />
+</launch>
+
