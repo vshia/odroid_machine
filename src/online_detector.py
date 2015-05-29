@@ -4,7 +4,9 @@ import rospy
 from zeroconf_msgs.msg import *
 from zeroconf_msgs.srv import *
 import nmap
+import threading
 
+lock = threading.Condition()
 online_robots = []
 nm = nmap.PortScanner()
 
@@ -20,22 +22,26 @@ def add_robot(name):
 
 def lostCB(data):
     name = data.name.split()
+    lock.acquire()
     if name[0] in online_robots:
         remove_robot(name[0])
-        
-
+    lock.release()       
+  
 def newCB(data):
     name = data.name.split()
+    lock.acquire()
     if name[0] not in online_robots:
         add_robot(name[0])
+    lock.release()
 
 def nm_scan():
+    lock.acquire()
     for r in online_robots:
         result = nm.scan( r+'.local', arguments='-sP')
         uphosts =  result['nmap']['scanstats']['uphosts']
         if not int(uphosts):
             remove_robot(r)
-
+    lock.release()
 
 def add_listener():
     rospy.wait_for_service('/zeroconf/add_listener')
