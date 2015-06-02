@@ -5,20 +5,28 @@ from zeroconf_msgs.msg import *
 from zeroconf_msgs.srv import *
 import nmap
 import threading
+from std_msgs.msg import String
+
 
 lock = threading.Condition()
 online_robots = []
 nm = nmap.PortScanner()
+host = 'optitrack2'
+
+list_pub = rospy.Publisher('/online_detector/online_robots', String, queue_size=5)
 
 def remove_robot(name):
     online_robots.remove(name)
     rospy.loginfo(name + " is offline")
     rospy.loginfo("current online robots " + str(online_robots))
+    list_pub.publish(','.join(online_robots))
 
 def add_robot(name):
-    online_robots.append(name)
-    rospy.loginfo(name + " is online")
-    rospy.loginfo("current online robots " + str(online_robots))
+    if name != host:
+        online_robots.append(name)
+        rospy.loginfo(name + " is online")
+        rospy.loginfo("current online robots " + str(online_robots))
+        list_pub.publish(','.join(online_robots))
 
 def lostCB(data):
     name = data.name.split()
