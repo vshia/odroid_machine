@@ -1,7 +1,0 @@
-<launch>
-
-  <include file="$(find zeroconf_avahi)/launch/ros_browser.launch" />
-
-  <node name="onlineDetector" pkg="odroid_machine" type="online_detector.py" respawn="false" output="screen"/>
-
-</launch>
