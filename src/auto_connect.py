@@ -72,8 +72,8 @@ def run():
     call_service()
     rate = rospy.Rate(0.5)
 
+    print "Waiting for connection..."
     while len(online_robots) == 0:
-        print "waiting for connections"
         rate.sleep()
 
     while not rospy.is_shutdown():
