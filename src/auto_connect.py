@@ -10,6 +10,7 @@ import subprocess
 
 lock = threading.Condition()
 online_robots = []
+lost_robots = []
 pdict = {}
 nm = nmap.PortScanner()
 host = 'optitrack2'
@@ -48,6 +49,13 @@ def nm_scan():
         uphosts =  result['nmap']['scanstats']['uphosts']
         if not int(uphosts):
             remove_robot(r)
+            lost_robots.append(r)
+    for r in lost_robots:
+        result = nm.scan( r+'.local', arguments='-sP')
+        uphosts =  result['nmap']['scanstats']['uphosts']
+        if int(uphosts):
+            add_robot(r)
+            lost_robots.remove(r)
     lock.release()
 
 def call_service():
