@@ -21,7 +21,6 @@ def remove_robot(name):
     online_robots.remove(name)
     rospy.loginfo(name + " is offline")
     rospy.loginfo("current online robots " + str(online_robots))
-    list_pub.publish(','.join(online_robots))
     if name in pdict:    
         pdict.pop(name)
     
@@ -31,7 +30,6 @@ def add_robot(name):
         online_robots.append(name)
         rospy.loginfo(name + " is online")
         rospy.loginfo("current online robots " + str(online_robots))
-        list_pub.publish(','.join(online_robots))
         p = subprocess.Popen(["roslaunch","odroid_machine","remote_zumy.launch","mname:=" + name])
         pdict[name] = p.pid
 
@@ -43,7 +41,6 @@ def newCB(data):
     lock.release()
 
 def nm_scan():
-    lock.acquire()
     for r in online_robots:
         result = nm.scan( r+'.local', arguments='-sP')
         uphosts =  result['nmap']['scanstats']['uphosts']
@@ -56,7 +53,7 @@ def nm_scan():
         if int(uphosts):
             add_robot(r)
             lost_robots.remove(r)
-    lock.release()
+
 
 def call_service():
     rospy.wait_for_service('/zeroconf/add_listener')
@@ -70,7 +67,7 @@ def run():
     rospy.init_node("onlineListener", anonymous=True)
     rospy.Subscriber("/zeroconf/new_connections", DiscoveredService, newCB)
     call_service()
-    rate = rospy.Rate(0.5)
+    rate = rospy.Rate(1)
 
     print "Waiting for connection..."
     while len(online_robots) == 0:
@@ -78,7 +75,10 @@ def run():
 
     while not rospy.is_shutdown():
         print "scanning..."
+        lock.acquire()
         nm_scan()
+        list_pub.publish(','.join(online_robots))
+        lock.release()
         rate.sleep()
 
 
