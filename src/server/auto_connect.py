@@ -10,6 +10,44 @@ import subprocess
 import rosgraph.masterapi
 import re
 
+class connection():
+  def __init__(self, name):
+    self.name = name
+    self.status = 1 # 0 for offline, 1 for online, 2 for alive
+    self.process = subprocess.Popen(["roslaunch","odroid_machine","remote_zumy.launch","mname:=" + self.name])
+    
+    self.last_HB = None
+    self.heartBeat = False
+    self.death_time = 5
+   
+    rospy.Subscriber("/" + self.name + "/heartBeat", String, self.HBCB) ## TODO check if the topic name is right/ type
+
+  def HBCB(self, data):
+    if self.last_HB == None:
+        self.last_HB = rospy.get_time()
+        self.heartBeat = False
+    else:
+        now = rospy.get_time() 
+        gap = now - self.last_HB
+        self.last_HB = now
+        if gap > self.death_time:
+            self.heartBeat = False
+        else: 
+            self.heartBeat = True
+
+  def new_process(self):
+     if self.process.poll() == None:
+         self.process.terminate() 
+     self.process = subprocess.Popen(["roslaunch","odroid_machine","remote_zumy.launch","mname:=" + self.name])
+
+  def keep_process(self):
+     if not self.process.poll() == None:
+         self.process = subprocess.Popen(["roslaunch","odroid_machine","remote_zumy.launch","mname:=" + self.name])
+
+  def end_process(self):
+     if self.process.poll() == None:
+         self.process.terminate()
+
 class autoConnect():
   def __init__(self):
     self.master = rosgraph.masterapi.Master('/rostopic')
@@ -17,78 +55,43 @@ class autoConnect():
     self.nm = nmap.PortScanner()
     self.host = 'optitrack2'
     
-    self.online_robots = []
-    self.lost_robots = []
+    self.connections = {}
     self.pdict = {}
-    self.new = 0
-    self.new_count = 5
 
     self.pub = rospy.Publisher('/online_detector/online_robots', String, queue_size=5)
 
-  ### helper functions
-  def remove_robot(self, name):
-      self.online_robots.remove(name)
-      rospy.loginfo(name + " is offline")
-      rospy.loginfo("current online robots " + str(self.online_robots))
-      if name in self.pdict:    
-          self.pdict.pop(name)
-    
-
-  def add_robot(self, name):
-      if name != self.host:
-          self.online_robots.append(name)
-          rospy.loginfo(name + " is online")
-          rospy.loginfo("current online robots " + str(self.online_robots))
-          p = subprocess.Popen(["roslaunch","odroid_machine","remote_zumy.launch","mname:=" + name])
-          self.pdict[name] = p
-
-  ### new connection callback
+  ### callbacks
   def newCB(self, data):
       name = data.name.split()
+      name = name[0]
       self.lock.acquire()
-      if name[0] not in self.online_robots:
-          self.add_robot(name[0])
-          self.new = self.new_count
+      if (name not in self.connections) and (name!=self.host):
+          self.connections[name] = connection(name)
       self.lock.release()
 
   ### scan functions
-  def online_scan(self):
-      for r in self.online_robots:
-          result = self.nm.scan( r+'.local', arguments='-sP')
-          uphosts =  result['nmap']['scanstats']['uphosts']
-          if not int(uphosts):
-              self.remove_robot(r)
-              self.lost_robots.append(r)
+  def online_scan(self, name):
+      result = self.nm.scan( name +'.local', arguments='-sP')
+      uphosts =  result['nmap']['scanstats']['uphosts']
+      if not int(uphosts):
+          self.connections[name].status = 0
+          self.connections[name].end_process()
+      else:
+          if self.connections[name].heartBeat:
+              self.connections[name].keep_process()
+              self.connections[name].status = 2   
 
-  def alive_scan(self):
-      ### TODO Attention! If the zumy is accidentally power off, the heartbeat topic still can be detected!
-      topics = self.master.getPublishedTopics('/')
-      alive_robots = []
-      for t in topics:
-          m = re.search('odroid./heartBeat',str(t))
-          if m != None:
-              alive_robots.append(m.group(0)[:7])
+  def lost_scan(self, name): 
+      result = self.nm.scan( name +'.local', arguments='-sP')
+      uphosts =  result['nmap']['scanstats']['uphosts']
+      if int(uphosts):
+          self.connections[name].status = 1
+          self.connections[name].new_process()
 
-      #print "alive robots:"
-      #print alive_robots
-      #print "online robots:"
-      #print self.online_robots
-
-      ### TODO If the host cannot hear the heartbeat from zumy. it keep relaunching remote_zumy
-      for r in self.online_robots:
-          if r not in alive_robots:
-              p = self.pdict[r]
-              p.terminate()
-              p = subprocess.Popen(["roslaunch","odroid_machine","remote_zumy.launch","mname:=" + r])
-              self.pdict[r] = p
-    
-  def lost_scan(self): 
-      for r in self.lost_robots:
-          result = self.nm.scan( r+'.local', arguments='-sP')
-          uphosts =  result['nmap']['scanstats']['uphosts']
-          if int(uphosts):
-              self.add_robot(r)
-              self.lost_robots.remove(r)
+  def alive_scan(self, name): 
+      if not self.connections[name].heartBeat:
+          self.connections[name].status = 1
+          self.connections[name].process.terminate()        
 
   ### avahi listener adding function
   def call_service(self):
@@ -108,22 +111,27 @@ class autoConnect():
       rate = rospy.Rate(1)
 
       print "Waiting for connection..."
-      while len(self.online_robots) == 0:
+      while len(self.connections) == 0:
           rate.sleep()
 
       while not rospy.is_shutdown():
           print "scanning..."
+
           self.lock.acquire()
-          self.online_scan()
-          if self.new:
-              #print "####################################"
-              #print self.new
-              self.new = self.new - 1
-          else:
-              self.alive_scan()
-          self.lost_scan()
-          self.pub.publish(','.join(self.online_robots))
+          online_robots = []
+          for n in self.connections:
+              c = self.connections[n]
+              if c.status == 1:
+                  self.online_scan(c.name)
+                  online_robots.append(c.name)
+              elif c.status == 2:
+                  self.alive_scan(c.name)
+                  online_robots.append(c.name)
+              elif c.status == 0:
+                  self.lost_scan(c.name)
+          self.pub.publish(','.join(online_robots))
           self.lock.release()
+
           rate.sleep()
 
 
