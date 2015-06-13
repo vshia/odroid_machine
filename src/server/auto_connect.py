@@ -20,7 +20,7 @@ class connection():
     self.heartBeat = False
     self.death_time = 5
    
-    rospy.Subscriber("/" + self.name + "/heartBeat", String, self.HBCB) ## TODO check if the topic name is right/ type
+    rospy.Subscriber("/" + self.name + "/heartBeat", String, self.HBCB) 
 
   def HBCB(self, data):
     if self.last_HB == None:
@@ -53,19 +53,26 @@ class autoConnect():
     self.master = rosgraph.masterapi.Master('/rostopic')
     self.lock = threading.Condition()
     self.nm = nmap.PortScanner()
-    self.host = 'optitrack2'
+    self.host = 'toughbook'
+    self.family_name = 'odroid'
     
     self.connections = {}
     self.pdict = {}
 
     self.pub = rospy.Publisher('/online_detector/online_robots', String, queue_size=5)
 
+  ### helper functions
+  def validation(self, name):
+      if name[:6] == self.family_name:
+          return True
+      return False
+
   ### callbacks
   def newCB(self, data):
       name = data.name.split()
       name = name[0]
       self.lock.acquire()
-      if (name not in self.connections) and (name!=self.host):
+      if (name not in self.connections) and self.validation(name):
           self.connections[name] = connection(name)
       self.lock.release()
 
