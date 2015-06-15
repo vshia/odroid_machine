@@ -5,7 +5,7 @@ from zeroconf_msgs.msg import *
 from zeroconf_msgs.srv import *
 import nmap
 import threading
-from std_msgs.msg import String
+from std_msgs.msg import String, Int8
 import subprocess
 import rosgraph.masterapi
 import re
@@ -21,19 +21,31 @@ class connection():
     self.death_time = 5
    
     rospy.Subscriber("/" + self.name + "/heartBeat", String, self.HBCB) 
+    self.pub = rospy.Publisher('online_detector/HB_observer/' + self.name, Int8 ,queue_size=5)
+
+    # helper variable
+    self.beep = 1
 
   def HBCB(self, data):
-    if self.last_HB == None:
-        self.last_HB = rospy.get_time()
-        self.heartBeat = False
-    else:
-        now = rospy.get_time() 
-        gap = now - self.last_HB
-        self.last_HB = now
-        if gap > self.death_time:
-            self.heartBeat = False
-        else: 
-            self.heartBeat = True
+    self.last_HB = rospy.get_time()
+
+  def HB_observer(self):
+    if self.status == 1:
+      self.pub.publish(0)
+    elif self.status == 2:
+      self.pub.publish(self.beep)
+      self.beep = self.beep*(-1)
+
+  def check_HB(self):
+    self.HB_observer()
+    if self.last_HB != None:
+      now = rospy.get_time() 
+      gap = now - self.last_HB
+      if gap > self.death_time:
+          self.heartBeat = False
+      else: 
+          self.heartBeat = True   
+ 
 
   def new_process(self):
      if self.process.poll() == None:
@@ -59,7 +71,9 @@ class autoConnect():
     self.connections = {}
     self.pdict = {}
 
-    self.pub = rospy.Publisher('/online_detector/online_robots', String, queue_size=5)
+    self.pub_online = rospy.Publisher('/online_detector/online_robots', String, queue_size=5)
+    self.pub_alive = rospy.Publisher('/online_detector/alive_robots', String, queue_size=5)
+    self.pub_lost = rospy.Publisher('/online_detector/lost_robots', String, queue_size=5)
 
   ### helper functions
   def validation(self, name):
@@ -98,7 +112,7 @@ class autoConnect():
   def alive_scan(self, name): 
       if not self.connections[name].heartBeat:
           self.connections[name].status = 1
-          self.connections[name].process.terminate()        
+          self.connections[name].end_process()        
 
   ### avahi listener adding function
   def call_service(self):
@@ -112,38 +126,44 @@ class autoConnect():
   ### main function
   def run(self):
 
-      rospy.init_node("onlineListener", anonymous=True)
+      rospy.init_node("onlineDetector", anonymous=True)
       rospy.Subscriber("/zeroconf/new_connections", DiscoveredService, self.newCB)
       self.call_service()
       rate = rospy.Rate(1)
 
-      print "Waiting for connection..."
+      rospy.loginfo(" Online Detector: waiting for connection...")
       while len(self.connections) == 0:
           rate.sleep()
 
       while not rospy.is_shutdown():
-          print "scanning..."
+          rospy.loginfo(" Online Detector: scanning...")
 
           self.lock.acquire()
           online_robots = []
+          alive_robots = []
+          lost_robots = []
           for n in self.connections:
               c = self.connections[n]
+              c.check_HB()
               if c.status == 1:
                   self.online_scan(c.name)
                   online_robots.append(c.name)
               elif c.status == 2:
                   self.alive_scan(c.name)
-                  online_robots.append(c.name)
+                  alive_robots.append(c.name)
               elif c.status == 0:
                   self.lost_scan(c.name)
-          self.pub.publish(','.join(online_robots))
+                  lost_robots.append(c.name)
+          self.pub_online.publish(','.join(online_robots))
+          self.pub_alive.publish(','.join(alive_robots))
+          self.pub_lost.publish(','.join(lost_robots))
           self.lock.release()
 
           rate.sleep()
 
 
 if __name__ == "__main__":
-    print("Let's start!")
+    rospy.loginfo(" Online Detector: initializing...")
     ac = autoConnect()
     ac.run()
 
