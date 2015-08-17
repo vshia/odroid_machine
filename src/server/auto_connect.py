@@ -65,8 +65,9 @@ class autoConnect():
     self.master = rosgraph.masterapi.Master('/rostopic')
     self.lock = threading.Condition()
     self.nm = nmap.PortScanner()
-    self.host = 'toughbook'
-    self.family_name = 'odroid'
+    ### it is useless currently
+    # self.host = 'toughbook'
+    self.family_name = 'zumy'
     
     self.connections = {}
     self.pdict = {}
@@ -77,7 +78,7 @@ class autoConnect():
 
   ### helper functions
   def validation(self, name):
-      if name[:6] == self.family_name:
+      if name[:len(self.family_name)] == self.family_name:
           return True
       return False
 
