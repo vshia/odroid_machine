@@ -67,7 +67,7 @@ class autoConnect():
     self.nm = nmap.PortScanner()
     ### it is useless currently
     # self.host = 'toughbook'
-    self.family_name = 'zumy'
+    self.family_name = 'odroid'
     
     self.connections = {}
     self.pdict = {}
