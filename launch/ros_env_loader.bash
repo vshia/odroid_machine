@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-export MACHINE_TYPE=odroid
+export MACHINE_TYPE=zumy
 export COOP_SLAM_WORKSPACE=/home/$MACHINE_TYPE/coop_slam_workspace
 
 source $COOP_SLAM_WORKSPACE/devel/setup.bash
